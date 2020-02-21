@@ -1,17 +1,23 @@
 import numpy as np
 import tensorflow as tf
 
+#def smooth_l1(x):
+#    absx = tf.abs(x)
+#    in_threshold = tf.cast((absx < 1.0), tf.float32)
+#    over_threshold = 1 - in_threshold
+#    x2 = x ** 2
+#
+#    result = 0.5 * x2 * in_threshold + (absx - 0.5) * over_threshold
+#    return result
+
 def smooth_l1(x):
     absx = tf.abs(x)
-    in_threshold = tf.cast((absx < 1.0), tf.float32)
-    over_threshold = 1 - in_threshold
-    x2 = x ** 2
-
-    result = 0.5 * x2 * in_threshold + (absx - 0.5) * over_threshold
-    return result
+    minx = tf.minimum(absx, 1)
+    r = 0.5 * ((absx - 1) * minx + absx)
+    return r
 
 class Model:
-    def __init__(self, input_shape, num_class, num_anchors, l=1e-4):
+    def __init__(self, input_shape, num_class, num_anchors, l=1e-4, lr=1e-3):
         # input_size is tuple of (width, height, channel)
         self.input_shape = input_shape
         self.num_class = num_class
@@ -20,7 +26,7 @@ class Model:
         #self.build_network(l)
         self.build_network_with_batch_normalization(l)
 
-        self.optimizer = tf.optimizers.Adam()
+        self.optimizer = tf.optimizers.Adam(lr)
 
     def build_mobilenet_v1_base_network(self):
         mobilenet_v1 = tf.keras.applications.MobileNet(input_shape=self.input_shape, include_top=False, weights="imagenet")
@@ -178,18 +184,22 @@ class Model:
         outputs = []
         self.feature_sizes = []
         for i, f in enumerate(feature_maps):
-            output = self.apply_sliding_window(f, self.num_anchors[i])
+            output = self.apply_sliding_window(f, self.num_anchors[i], l)
             outputs.append(output)
-            self.feature_sizes.append(output.shape[1])
+            self.feature_sizes.append(output[0].shape[1])
         
         self.model = tf.keras.Model(base_network.input, outputs)
+        # Model output will list of class and location feature map like 
+        # [ [[batch, 37, 37, anchor * class], [batch, 37, 37, anchor * 4]], [[batch, 19, 19, anchor * class], [batch, 19, 19, anchor * 4]], [[], []], ... ]
 
     def apply_sliding_window(self, x, num_anchor, l=1e-4):
-        num_output = (self.num_class + 4) * num_anchor
+        #num_output = (self.num_class + 4) * num_anchor
 
-        y = tf.keras.layers.Conv2D(num_output, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l))(x)
+        #y = tf.keras.layers.Conv2D(num_output, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l))(x)
+        c = tf.keras.layers.Conv2D(num_anchor * self.num_class, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l))(x)
+        l = tf.keras.layers.Conv2D(num_anchor * 4, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l))(x)
         
-        return y
+        return c, l
 
     def predict(self, x, training=False):
         classes = []
@@ -197,12 +207,21 @@ class Model:
 
         predictions = self.model(x, training=training)
 
-        for i, predict in enumerate(predictions):
-            p = np.array(predict)
-            # Reshape to [batch, width, height, anchor, class + location]
-            p = p.reshape(p.shape[:-1] + (self.num_anchors[i], -1))
-            c = np.argmax(p[:, :, :, :, :self.num_class], axis=-1)
-            l = p[:, :, :, :, self.num_class:]
+        #for i, predict in enumerate(predictions):
+        #    p = np.array(predict)
+        #    # Reshape to [batch, width, height, anchor, class + location]
+        #    p = p.reshape(p.shape[:-1] + (self.num_anchors[i], -1))
+        #    c = np.argmax(p[:, :, :, :, :self.num_class], axis=-1)
+        #    l = p[:, :, :, :, self.num_class:]
+        #
+        #    classes.append(c)
+        #    locations.append(l)
+
+        for i, o in enumerate(predictions):
+            c = o[0]
+            l = o[1]
+            c = tf.argmax(tf.reshape(c, c.shape[:-1] + (self.num_anchors[i], self.num_class)), axis=-1)
+            l = tf.reshape(l, l.shape[:-1] + (self.num_anchors[i], 4))
 
             classes.append(c)
             locations.append(l)
@@ -216,10 +235,16 @@ class Model:
             classes_pred = []
             locations_pred = []
 
-            for o in outputs:
-                o = tf.reshape(o, [-1, self.num_class + 4])
-                classes_pred.append(o[:, :self.num_class])
-                locations_pred.append(o[:, self.num_class:])
+            #for o in outputs:
+            #    o = tf.reshape(o, [-1, self.num_class + 4])
+            #    classes_pred.append(o[:, :self.num_class])
+            #    locations_pred.append(o[:, self.num_class:])
+
+            for c, l in outputs:
+                c = tf.reshape(c, [-1, self.num_class])
+                l = tf.reshape(l, [-1, 4])
+                classes_pred.append(c)
+                locations_pred.append(l)
             
             classes_pred = tf.concat(classes_pred, axis=0)
             locations_pred = tf.concat(locations_pred, axis=0)
@@ -239,10 +264,16 @@ class Model:
             classes_pred = []
             locations_pred = []
 
-            for o in outputs:
-                o = tf.reshape(o, [-1, self.num_class + 4])
-                classes_pred.append(o[:, :self.num_class])
-                locations_pred.append(o[:, self.num_class:])
+            #for o in outputs:
+            #    o = tf.reshape(o, [-1, self.num_class + 4])
+            #    classes_pred.append(o[:, :self.num_class])
+            #    locations_pred.append(o[:, self.num_class:])
+            
+            for c, l in outputs:
+                c = tf.reshape(c, [-1, self.num_class])
+                l = tf.reshape(l, [-1, 4])
+                classes_pred.append(c)
+                locations_pred.append(l)
             
             classes_pred = tf.concat(classes_pred, axis=0)
             locations_pred = tf.concat(locations_pred, axis=0)
@@ -267,15 +298,15 @@ class Model:
     def calculate_loss(self, class_pred, location_pred, class_gt, location_gt, negative_ratio=3.0, step=None):
         # Generate hard negative mining mask
         class_softmax = tf.keras.layers.Softmax()(class_pred)
-        positive_mask = tf.cast(class_gt != 0, tf.float32)
-        negative_mask = tf.cast(class_gt == 0, tf.float32)
+        positive_mask = class_gt != 0
+        negative_mask = class_gt == 0
 
         negative_softmax = -1.0 * class_softmax[:, 0] * negative_mask + -1.0 * positive_mask
-        num_negative = tf.maximum(tf.minimum(sum(positive_mask) * negative_ratio, sum(negative_mask)), 1)
-        _, indices = tf.math.top_k(negative_softmax, k=tf.cast(num_negative, tf.int32))
+        num_negative = max(min(sum(positive_mask) * negative_ratio, sum(negative_mask)), 1)
+        _, indices = tf.math.top_k(negative_softmax, k=num_negative)
 
-        negative_mask = np.zeros(class_gt.shape[0]).astype(np.float32)
-        for i in indices: negative_mask[i] = 1.0
+        negative_mask = np.zeros(class_gt.shape[0]).astype(np.bool)
+        for i in indices: negative_mask[i] = True
         mask = positive_mask + negative_mask
 
         # Class loss
@@ -285,7 +316,7 @@ class Model:
         # Location loss
         delta = location_pred - location_gt
         l1 = smooth_l1(delta)
-        location_loss = tf.reduce_sum(tf.reduce_sum(l1, axis=1) * mask) / sum(mask)
+        location_loss = tf.reduce_sum(tf.reduce_sum(l1, axis=1) * positive_mask) / sum(positive_mask)
 
         # Regularization loss
         regularization_loss = tf.reduce_sum(self.model.losses)
