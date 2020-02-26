@@ -291,7 +291,8 @@ class DataReader:
                     overlap_max = 0
                     for annotation in annotations:
                         # Skip if center is not in annotation bounding box
-                        if cx < annotation.xmin or annotation.xmax < cx or cy < annotation.ymin or annotation.ymax < cy: continue
+                        #if cx < annotation.xmin or annotation.xmax < cx or cy < annotation.ymin or annotation.ymax < cy: continue
+                        if xmin > annotation.xmax or xmax < annotation.xmin or ymin > annotation.ymax or ymax < annotation.ymin: continue
 
                         overlap_xmin = max(xmin, annotation.xmin)
                         overlap_xmax = min(xmax, annotation.xmax)
@@ -302,7 +303,7 @@ class DataReader:
                         overlap = overlap / (width * height + annotation.width * annotation.height - overlap)
 
                         # overlap_max to find the largets overlap object
-                        if overlap > overlap_threshold and overlap > overlap_max:
+                        if overlap >= overlap_threshold and overlap > overlap_max:
                             overlap_max = overlap
 
                             if overlap > overlap_max_max: overlap_max_max = overlap
