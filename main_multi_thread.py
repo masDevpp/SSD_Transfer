@@ -8,7 +8,8 @@ from PIL import Image, ImageDraw
 import threading
 
 DATA_DIR = "D:\\MachineLearning\\VOC\\VOCdevkit\\VOC2007"
-LOG_DIR = "D:\\MachineLearning\\SSD_Transfer\\log_multi"
+TEST_DATA_DIR = "D:\\MachineLearning\\VOC\\2012\\VOCdevkit\\VOC2012"
+LOG_DIR = os.path.join(os.getcwd(), "log_multi")
 
 save_freq = 100
 save_freq_local = save_freq / 5
@@ -27,7 +28,7 @@ class Main:
     def __init__(self):
         print("\nPrepare reader")
         self.train_reader = DataReader(DATA_DIR, IMAGE_SIZE, BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=True)
-        self.test_reader = DataReader(DATA_DIR, IMAGE_SIZE, TEST_BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=False, num_thread=1, queue_size=2)
+        self.test_reader = DataReader(TEST_DATA_DIR, IMAGE_SIZE, TEST_BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=False, num_thread=1, queue_size=2)
         print("\nPrepare model")
         self.global_model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, l=regularizer_coeff)
         if self.global_model.feature_sizes != FEATURE_SIZES: raise ValueError
