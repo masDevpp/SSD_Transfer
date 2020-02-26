@@ -30,7 +30,8 @@ class Main:
         self.train_reader = DataReader(DATA_DIR, IMAGE_SIZE, BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=True)
         self.test_reader = DataReader(TEST_DATA_DIR, IMAGE_SIZE, TEST_BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=False, num_thread=1, queue_size=2)
         print("\nPrepare model")
-        self.global_model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, l=regularizer_coeff)
+        self.learnining_rate = tf.optimizers.schedules.ExponentialDecay(0.01, self.train_reader.num_data / BATCH_SIZE, 0.96, staircase=True)
+        self.global_model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, l=regularizer_coeff, lr=self.learnining_rate)
         if self.global_model.feature_sizes != FEATURE_SIZES: raise ValueError
 
         print("\nLoad checkpoint")
@@ -140,6 +141,8 @@ class Main:
                 train_duration += time.time() - start_time
 
                 self.global_model.apply_gradients(gradients)
+
+                tf.summary.scalar("learning_rate", self.global_model.optimizer.lr(self.global_model.optimizer.iterations), step=self.global_model.optimizer.iterations)
             
             if itr % save_freq_local == 0:
                 self.callback(id, loss, data_duration, train_duration)
