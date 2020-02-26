@@ -63,8 +63,9 @@ class Main:
         if self.saving == False and step - self.previous_step > save_freq:
             self.saving = True
 
-            print(f"step {step}, loss {loss:.3f}, total dur {time.time() - self.previous_time:.2f}, {self.train_duration:.2f} {self.data_duration:.2f}, {time.asctime()}")
-            self.checkpoint.save(os.path.join(LOG_DIR, "ckpt"))
+            epoch = step * BATCH_SIZE / self.train_reader.num_data
+            print(f"step {step}, {epoch:.2f} epoch, loss {loss:.3f}, total dur {time.time() - self.previous_time:.2f}, {self.train_duration:.2f} {self.data_duration:.2f}, {time.asctime()}")
+            self.checkpoint.save(os.path.join(LOG_DIR, "ckpt_" + str(step)))
 
             if step - self.previous_test_step > test_freq:
                 #self.evaluation()
