@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 DATA_DIR = "D:\\MachineLearning\\VOC\\VOCdevkit\\VOC2007"
 LOG_DIR = "D:\\MachineLearning\\SSD_Transfer\\log"
 
-save_freq = 10#50
+save_freq = 50
 eval_freq = 10000000
 
 IMAGE_SIZE = [300, 300]
@@ -47,7 +47,7 @@ def train():
     train_reader = DataReader(DATA_DIR, IMAGE_SIZE, BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=True)
     test_reader = DataReader(DATA_DIR, IMAGE_SIZE, BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=False, num_thread=1, queue_size=2)
     print("\nPrepare model")
-    model = Model(IMAGE_SIZE + [3], train_reader.num_class, NUM_ANCHORS)
+    model = Model(IMAGE_SIZE + [3], train_reader.num_class, NUM_ANCHORS, l=1e-8)
     if model.feature_sizes != FEATURE_SIZES: raise ValueError
 
     print("\nLoad checkpoint")
