@@ -50,7 +50,7 @@ class Main:
             model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, l=regularizer_coeff)
             if model.feature_sizes != FEATURE_SIZES: raise ValueError
 
-            self.threads.append(threading.Thread(target=self.trainer, args=(str(i), self.train_reader, model)))
+            self.threads.append(threading.Thread(target=self.trainer, args=(str(i), self.train_reader, model), name="trainer"))
             self.threads[i].start()
 
     def callback(self, id, loss, data_duration, train_duration):
@@ -66,7 +66,7 @@ class Main:
 
             if step - self.previous_test_step > test_freq:
                 #self.evaluation()
-                threading.Thread(target=self.evaluation).start()
+                threading.Thread(target=self.evaluation, name="evaluation").start()
                 self.previous_test_step = step
 
             self.previous_time = time.time()

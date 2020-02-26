@@ -37,7 +37,7 @@ class DataReader:
 
         self.threads = []
         for i in range(num_thread):
-            self.threads.append(threading.Thread(target=self.read_batch_worker, daemon=True))
+            self.threads.append(threading.Thread(target=self.read_batch_worker, daemon=True, name="data_reader"))
             self.threads[i].start()
 
         self.event.set()
