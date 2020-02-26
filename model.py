@@ -22,21 +22,32 @@ class Model:
         self.input_shape = input_shape
         self.num_class = num_class
         self.num_anchors = num_anchors
+        self.learning_rate = lr
 
         #self.build_network(l)
         self.build_network_with_batch_normalization(l)
 
-        self.optimizer = tf.optimizers.Adam(lr)
+        self.optimizer = tf.optimizers.Adam(self.learning_rate)
 
-    def build_mobilenet_v1_base_network(self):
+    def build_mobilenet_v1_base_network(self, l=1e-4):
         mobilenet_v1 = tf.keras.applications.MobileNet(input_shape=self.input_shape, include_top=False, weights="imagenet")
 
         base_network = tf.keras.Sequential([l for l in mobilenet_v1.layers[:37]])
         base_network.trainable = False
 
-        base_network.add(tf.keras.layers.Conv2D(512, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(), use_bias=False))
+        base_network.add(tf.keras.layers.Conv2D(512, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False))
         base_network.add(tf.keras.layers.BatchNormalization())
         base_network.add(tf.keras.layers.ReLU())
+
+        return base_network
+    
+    def build_mobilenet_v1_base_network_2(self, l=1e-4):
+        mobilenet_v1 = tf.keras.applications.MobileNet(input_shape=self.input_shape, include_top=False, weights="imagenet")
+
+        base_network = tf.keras.Sequential([l for l in mobilenet_v1.layers[:37]])
+        base_network.trainable = True
+
+        for l in base_network.layers[:-3]: l.trainable = False
 
         return base_network
 
@@ -116,10 +127,10 @@ class Model:
         feature_maps = []
 
         # 37x37x512
-        #base_network = self.build_vgg16_base_network()
-        base_network = self.build_mobilenet_v1_base_network()
+        #base_network = self.build_vgg16_base_network(l)
+        base_network = self.build_mobilenet_v1_base_network_2(l)
         y = base_network(base_network.input)
-        feature_maps.append(y)
+        #feature_maps.append(y)
 
         # 19x19x1024
         y = tf.keras.Sequential([
@@ -207,16 +218,6 @@ class Model:
 
         predictions = self.model(x, training=training)
 
-        #for i, predict in enumerate(predictions):
-        #    p = np.array(predict)
-        #    # Reshape to [batch, width, height, anchor, class + location]
-        #    p = p.reshape(p.shape[:-1] + (self.num_anchors[i], -1))
-        #    c = np.argmax(p[:, :, :, :, :self.num_class], axis=-1)
-        #    l = p[:, :, :, :, self.num_class:]
-        #
-        #    classes.append(c)
-        #    locations.append(l)
-
         for i, o in enumerate(predictions):
             c = o[0]
             l = o[1]
@@ -303,10 +304,11 @@ class Model:
 
         negative_softmax = -1.0 * class_softmax[:, 0] * negative_mask + -1.0 * positive_mask
         num_negative = max(min(sum(positive_mask) * negative_ratio, sum(negative_mask)), 1)
-        _, indices = tf.math.top_k(negative_softmax, k=num_negative)
+        values, indices = tf.math.top_k(negative_softmax, k=num_negative)
 
-        negative_mask = np.zeros(class_gt.shape[0]).astype(np.bool)
-        for i in indices: negative_mask[i] = True
+        negative_mask = np.array(negative_softmax >= values[-1])
+        #negative_mask = np.zeros(class_gt.shape[0]).astype(np.bool)
+        #for i in indices: negative_mask[i] = True
         mask = positive_mask + negative_mask
 
         # Class loss
