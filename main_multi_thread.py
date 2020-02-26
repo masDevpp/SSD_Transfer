@@ -159,12 +159,12 @@ class Main:
                 for x in range(classes_pred[f].shape[1]):
                     for y in range(classes_pred[f].shape[2]):
                         for a in range(classes_pred[f].shape[3]):
-                            if classes_pred[f][b, x, y, a] == 0: continue
+                            if classes_pred[f][b, y, x, a] == 0: continue
 
-                            cx = (locations_pred[f][b, x, y, a, 0] * default_boxies[f][b, x, y, a, 2] + default_boxies[f][b, x, y, a, 0]) * image.size[0]
-                            cy = (locations_pred[f][b, x, y, a, 1] * default_boxies[f][b, x, y, a, 3] + default_boxies[f][b, x, y, a, 1]) * image.size[1]
-                            wid = (np.exp(1) ** locations_pred[f][b, x, y, a, 2]) * default_boxies[f][b, x, y, a, 2] * image.size[0]
-                            hei = (np.exp(1) ** locations_pred[f][b, x, y, a, 3]) * default_boxies[f][b, x, y, a, 3] * image.size[1]
+                            cx = (locations_pred[f][b, y, x, a, 0] * default_boxies[f][b, y, x, a, 2] + default_boxies[f][b, y, x, a, 0]) * image.size[0]
+                            cy = (locations_pred[f][b, y, x, a, 1] * default_boxies[f][b, y, x, a, 3] + default_boxies[f][b, y, x, a, 1]) * image.size[1]
+                            wid = (np.exp(1) ** locations_pred[f][b, y, x, a, 2]) * default_boxies[f][b, y, x, a, 2] * image.size[0]
+                            hei = (np.exp(1) ** locations_pred[f][b, y, x, a, 3]) * default_boxies[f][b, y, x, a, 3] * image.size[1]
 
                             xmin = cx - wid / 2
                             xmax = cx + wid / 2
@@ -176,7 +176,7 @@ class Main:
                             if ymax > image.size[1] - 1: ymax = image.size[0] - 1
 
                             draw.rectangle([xmin, ymin, xmax, ymax], outline="red")
-                            draw.text([xmin, ymin], DataReader.class_to_name(None, classes_pred[f][b, x, y, a]), fill="red")
+                            draw.text([xmin, ymin], DataReader.class_to_name(None, classes_pred[f][b, y, x, a]), fill="red")
 
             drawn_images.append(image)
 

@@ -156,8 +156,8 @@ class DataReader:
                 locations_gt.append(loc)
                 default_boxies.append(db)
 
-            if not self.batch_first:
-                # Reshape to [feature, batch, width, height, anchor, class or location]
+            if self.batch_first == False:
+                # Reshape to [feature, batch, height, width, anchor, class or location]
                 cl = []
                 loc = []
                 db = []
@@ -186,7 +186,7 @@ class DataReader:
                 default_boxies = db
 
                 if self.flatten:
-                    # Reshape to [feature * batch * width * height * anchor, class or location]
+                    # Reshape to [feature * batch * height * width * anchor, class or location]
                     classes_gt = np.concatenate(classes_gt, axis=0)
                     locations_gt = np.concatenate(locations_gt, axis=0)
                     default_boxies = np.concatenate(default_boxies, axis=0)
@@ -283,10 +283,10 @@ class DataReader:
                     ymin = cy - height / 2
                     ymax = cy + height / 2
 
-                    default_boxies[x, y, aspect_index, 0] = cx
-                    default_boxies[x, y, aspect_index, 1] = cy
-                    default_boxies[x, y, aspect_index, 2] = width
-                    default_boxies[x, y, aspect_index, 3] = height
+                    default_boxies[y, x, aspect_index, 0] = cx
+                    default_boxies[y, x, aspect_index, 1] = cy
+                    default_boxies[y, x, aspect_index, 2] = width
+                    default_boxies[y, x, aspect_index, 3] = height
 
                     overlap_max = 0
                     for annotation in annotations:
@@ -307,11 +307,11 @@ class DataReader:
 
                             if overlap > overlap_max_max: overlap_max_max = overlap
 
-                            classies[x, y, aspect_index] = annotation.c
-                            locations[x, y, aspect_index, 0] = (annotation.xcenter - cx) / width
-                            locations[x, y, aspect_index, 1] = (annotation.ycenter - cy) / height
-                            locations[x, y, aspect_index, 2] = np.log(annotation.width / width)
-                            locations[x, y, aspect_index, 3] = np.log(annotation.height / height)
+                            classies[y, x, aspect_index] = annotation.c
+                            locations[y, x, aspect_index, 0] = (annotation.xcenter - cx) / width
+                            locations[y, x, aspect_index, 1] = (annotation.ycenter - cy) / height
+                            locations[y, x, aspect_index, 2] = np.log(annotation.width / width)
+                            locations[y, x, aspect_index, 3] = np.log(annotation.height / height)
 
         #print(f"overlap_max_max: {overlap_max_max}")
         return classies, locations, default_boxies
