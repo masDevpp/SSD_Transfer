@@ -59,34 +59,9 @@ class DataReader:
         image_file = os.path.join(self.base_dir, "JPEGImages", self.file_names[index] + ".jpg")
         annotation_file = os.path.join(self.base_dir, "Annotations", self.file_names[index] + ".xml")
 
-        image_start_time = time.time()
         # Load image
         image = Image.open(image_file)
-        orig_image_size = image.size
 
-        image = image.resize(self.image_size, resample=Image.BILINEAR)
-
-        do_flip = np.random.random() > 0.5
-        if do_flip:
-            image = image.transpose(method=Image.FLIP_LEFT_RIGHT)
-        
-        # Image distortion
-        if np.random.random() < self.distort_prob:
-            enhancer = ImageEnhance.Brightness(image)
-            ratio = np.random.random() * 0.8 + 0.6
-            image = enhancer.enhance(ratio)
-        
-        if np.random.random() < self.distort_prob:
-            enhancer = ImageEnhance.Contrast(image)
-            ratio = np.random.random() * 0.8 + 0.6
-            image = enhancer.enhance(ratio)
-
-        # Normalize
-        image = np.array(image).astype(np.float32)
-        image = image / 255
-        image_elapsed_time = time.time() - image_start_time
-
-        annotation_start_time = time.time()
         # Load annotation data
         class AnnotationData:
             pass
@@ -110,27 +85,140 @@ class DataReader:
             ad.file_name = self.file_names[index]
             ad.name = name
             ad.c = self.name_to_class(ad.name)
-            ad.xmin = xmin / orig_image_size[0]
-            ad.xmax = xmax / orig_image_size[0]
-            ad.ymin = ymin / orig_image_size[1]
-            ad.ymax = ymax / orig_image_size[1]
-            ad.width = width / orig_image_size[0]
-            ad.height = height / orig_image_size[1]
-            ad.xcenter = xcenter / orig_image_size[0]
-            ad.ycenter = ycenter / orig_image_size[1]
+            ad.xmin = xmin
+            ad.xmax = xmax
+            ad.ymin = ymin
+            ad.ymax = ymax
+            ad.width = width
+            ad.height = height
+            ad.xcenter = xcenter
+            ad.ycenter = ycenter
 
-            if do_flip:
-                ad.xcenter = 1.0 - ad.xcenter
-                ad.xmin = ad.xcenter - ad.width / 2
-                ad.xmax = ad.xcenter + ad.width / 2
-            
             annotation_datas.append(ad)
         
-        annotation_elapsed_time = time.time() - annotation_start_time
-
-        # print("image: " + str(image_elapsed_time) + ", annotation: " + str(annotation_elapsed_time))
         return image, annotation_datas
     
+    def distort_image(self, image, distort_min_ratio=0.6, distort_max_ratio=1.4):
+        # Brightness
+        enhancer = ImageEnhance.Brightness(image)
+        ratio = np.random.random() * (distort_max_ratio - distort_min_ratio) + distort_min_ratio
+        image = enhancer.enhance(ratio)
+        
+        # Contrast
+        enhancer = ImageEnhance.Contrast(image)
+        ratio = np.random.random() * (distort_max_ratio - distort_min_ratio) + distort_min_ratio
+        image = enhancer.enhance(ratio)
+
+        return image
+
+    def flip_image(self, image, annotations, flip_ratio):
+        if np.random.random() < flip_ratio:
+            image = image.transpose(method=Image.FLIP_LEFT_RIGHT)
+
+            for annotation in annotations:
+                annotation.xcenter = annotation.width - annotation.xcenter
+                
+                orig_xmin = annotation.xmin
+                orig_xmax = annotation.xmax
+                annotation.xmin = image.width - orig_xmax
+                annotation.xmax = image.width - orig_xmin
+        
+        return image, annotations
+
+    def crop_image(self, image, annotations, size, size_variance, size_ratio=None, size_variance_ratio=None):
+        if size_ratio is not None:
+            # Overwrite size using ratio
+            size[0] = image.size[0] * size_ratio
+            size[1] = image.size[1] * size_ratio        
+        
+        if size_variance_ratio is not None:
+            # Overwrite size_variance using ratio
+            size_variance[0] = image.size[0] * size_variance_ratio
+            size_variance[1] = image.size[1] * size_variance_ratio
+
+        width = int(size[0] + (np.random.random() - 0.5) * 2 * size_variance[0])
+        height = int(size[1] + (np.random.random() - 0.5) * 2 * size_variance[1])
+        
+        if width > image.size[0]: 
+            width = image.size[0]
+            xmin = 0
+        else:
+            xmin = np.random.randint(0, image.size[0] - width)
+
+        if height > image.size[1]: 
+            height = image.size[1]
+            ymin = 0
+        else:
+            ymin = np.random.randint(0, image.size[1] - height)
+        
+        xmax = xmin + width
+        ymax = ymin + height
+
+        new_annotations = []
+        for annotation in annotations:
+            # Skip if out of crop extent
+            if annotation.xmin >= xmax or annotation.xmax <= xmin or annotation.ymin >= ymax or annotation.ymax <= ymin: continue
+
+            # Cap annotation extent
+            if annotation.xmin < xmin: annotation.xmin = xmin
+            if annotation.xmax > xmax: annotation.xmax = xmax
+            if annotation.ymin < ymin: annotation.ymin = ymin
+            if annotation.ymax > ymax: annotation.ymax = ymax
+
+            # Shift
+            annotation.xmin -= xmin
+            annotation.xmax -= xmin
+            annotation.ymin -= ymin
+            annotation.ymax -= ymin
+            annotation.width = annotation.xmax - annotation.xmin
+            annotation.height = annotation.ymax - annotation.ymin
+            annotation.xcenter = annotation.xmin + annotation.width / 2
+            annotation.ycenter = annotation.ymin + annotation.height / 2
+
+            new_annotations.append(annotation)
+        
+        image = image.crop((xmin, ymin, xmax, ymax))
+
+        return image, new_annotations
+
+    def resize_image(self, image, annotations, size, size_variance):
+        width = int(size[0] + (np.random.random() - 0.5) * 2 * size_variance)
+        height = int(size[1] + (np.random.random() - 0.5) * 2 * size_variance)
+
+        width_ratio = width / image.size[0]
+        height_ratio = height / image.size[1]
+
+        for annotation in annotations:
+            annotation.xmin *= width_ratio
+            annotation.xmax *= width_ratio
+            annotation.ymin *= height_ratio
+            annotation.ymax *= height_ratio
+
+            annotation.width *= width_ratio
+            annotation.height *= height_ratio
+
+            annotation.xcenter *= width_ratio
+            annotation.ycenter *= height_ratio
+        
+        image = image.resize((width, height), resample=Image.BILINEAR)
+
+        return image, annotations
+    
+    def normalize_annotation(self, image, annotations):
+        for annotation in annotations:
+            annotation.xmin /= image.width
+            annotation.xmax /= image.width
+            annotation.ymin /= image.height
+            annotation.ymax /= image.height
+
+            annotation.width /= image.width
+            annotation.height /= image.height
+
+            annotation.xcenter /= image.width
+            annotation.ycenter /= image.height
+
+        return annotations
+
     def read_batch_worker(self):
         while True:
             images = []
@@ -141,6 +229,19 @@ class DataReader:
 
             for _ in range(self.batch_size):
                 image, annotation = self.read_data()
+
+                # Image distortion
+                if np.random.random() < self.distort_prob:
+                    image, annotation = self.flip_image(image, annotation, 1.0)
+                    image, annotation = self.crop_image(image, annotation, [0, 0], [0, 0], 0.8, 0.2)
+                    image = self.distort_image(image)
+                
+                image, annotation = self.resize_image(image, annotation, self.image_size, 0)
+                annotation = self.normalize_annotation(image, annotation)
+
+                # Normalize image
+                image = np.array(image) / 255
+
                 images.append(image)
                 annotations.append(annotation)
 
@@ -325,7 +426,7 @@ if __name__ == "__main__":
     #feature_size = [37, 18, 9, 4, 2, 1]
     feature_size = [37, 19, 10, 5, 3, 1]
     num_anchors = [4, 6, 6, 6, 4, 4]
-    reader = DataReader("D:\\MachineLearning\\VOC\\VOCdevkit\\VOC2007", (width, height), 8, feature_size, aspect_ratio_list, num_anchors)
+    reader = DataReader("D:\\MachineLearning\\VOC\\VOCdevkit\\VOC2007", (width, height), 8, feature_size, aspect_ratio_list, num_anchors, num_thread=1)
 
     images, annotations, classes_gt, locations_gt, default_boxies_gt = reader.read_batch()
     for image, annotation, classes, locations, default_boxies in zip(images, annotations, classes_gt, locations_gt, default_boxies_gt):
@@ -349,32 +450,32 @@ if __name__ == "__main__":
             sk = smin + (smax - smin) / (len(feature_size) - 1) * i
             sk2 = smin + (smax - smin) / (len(feature_size) - 1) * (i + 1)
 
-            #c, l, d = reader.generate_ground_truth(annotation, fs, aspect_ratio_list, overlap_threshold=0.4)
-            c = classes[i]
-            l = locations[i]
-            d = default_boxies[i]
+            c, l, d = reader.generate_ground_truth(annotation, fs, aspect_ratio_list, overlap_threshold=0.4)
+            #c = classes[i]
+            #l = locations[i]
+            #d = default_boxies[i]
 
-            for x in range(c.shape[0]):
-                for y in range(c.shape[1]):
+            for y in range(c.shape[0]):
+                for x in range(c.shape[1]):
                     for asp in range(c.shape[2]):
-                        if c[x, y, asp] == 0: continue
+                        if c[y, x, asp] == 0: continue
 
-                        xmin = (d[x, y, asp, 0] - d[x, y, asp, 2] / 2) * width
-                        xmax = (d[x, y, asp, 0] + d[x, y, asp, 2] / 2) * width
-                        ymin = (d[x, y, asp, 1] - d[x, y, asp, 3] / 2) * height
-                        ymax = (d[x, y, asp, 1] + d[x, y, asp, 3] / 2) * height
+                        xmin = (d[y, x, asp, 0] - d[y, x, asp, 2] / 2) * width
+                        xmax = (d[y, x, asp, 0] + d[y, x, asp, 2] / 2) * width
+                        ymin = (d[y, x, asp, 1] - d[y, x, asp, 3] / 2) * height
+                        ymax = (d[y, x, asp, 1] + d[y, x, asp, 3] / 2) * height
                         #draw.rectangle([xmin, ymin, xmax, ymax], outline="blue")
                         
-                        cx = (l[x, y, asp, 0] * d[x, y, asp, 2] + d[x, y, asp, 0]) * width
-                        cy = (l[x, y, asp, 1] * d[x, y, asp, 3] + d[x, y, asp, 1]) * height
-                        wid = (np.exp(1) ** l[x, y, asp, 2]) * d[x, y, asp, 2] * width
-                        hei = (np.exp(1) ** l[x, y, asp, 3]) * d[x, y, asp, 3] * height
+                        cx = (l[y, x, asp, 0] * d[y, x, asp, 2] + d[y, x, asp, 0]) * width
+                        cy = (l[y, x, asp, 1] * d[y, x, asp, 3] + d[y, x, asp, 1]) * height
+                        wid = (np.exp(1) ** l[y, x, asp, 2]) * d[y, x, asp, 2] * width
+                        hei = (np.exp(1) ** l[y, x, asp, 3]) * d[y, x, asp, 3] * height
                         draw.rectangle([cx - wid / 2, cy - hei / 2, cx + wid / 2, cy + hei / 2], outline="red")
                         
 
         image.show()
 
     for i in range(1000):
-        img, anno = reader.read_batch()
+        out = reader.read_batch()
 
     print("done")
