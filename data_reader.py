@@ -414,6 +414,9 @@ class DataReader:
                             locations[y, x, aspect_index, 2] = np.log(annotation.width / width)
                             locations[y, x, aspect_index, 3] = np.log(annotation.height / height)
 
+        locations = locations.astype(np.float32)
+        default_boxies = default_boxies.astype(np.float32)
+        
         #print(f"overlap_max_max: {overlap_max_max}")
         return classies, locations, default_boxies
 
