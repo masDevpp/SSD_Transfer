@@ -17,31 +17,31 @@ def smooth_l1(x):
     return r
 
 class Model:
-    def __init__(self, input_shape, num_class, num_anchors, l=1e-4, lr=1e-3):
+    def __init__(self, input_shape, num_class, num_anchors, regularizer_coeff=1e-4, lr=1e-3):
         # input_size is tuple of (width, height, channel)
         self.input_shape = input_shape
         self.num_class = num_class
         self.num_anchors = num_anchors
         self.learning_rate = lr
 
-        #self.build_network(l)
-        self.build_network_with_batch_normalization(l)
+        #self.build_network(regularizer_coeff)
+        self.build_network_with_batch_normalization(regularizer_coeff)
 
         self.optimizer = tf.optimizers.Adam(self.learning_rate)
 
-    def build_mobilenet_v1_base_network(self, l=1e-4):
+    def build_mobilenet_v1_base_network(self, regularizer_coeff=1e-4):
         mobilenet_v1 = tf.keras.applications.MobileNet(input_shape=self.input_shape, include_top=False, weights="imagenet")
 
         base_network = tf.keras.Sequential([l for l in mobilenet_v1.layers[:37]])
         base_network.trainable = False
 
-        base_network.add(tf.keras.layers.Conv2D(512, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False))
+        base_network.add(tf.keras.layers.Conv2D(512, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False))
         base_network.add(tf.keras.layers.BatchNormalization())
         base_network.add(tf.keras.layers.ReLU())
 
         return base_network
     
-    def build_mobilenet_v1_base_network_2(self, l=1e-4):
+    def build_mobilenet_v1_base_network_2(self, regularizer_coeff=1e-4):
         mobilenet_v1 = tf.keras.applications.MobileNet(input_shape=self.input_shape, include_top=False, weights="imagenet")
 
         base_network = tf.keras.Sequential([l for l in mobilenet_v1.layers[:37]])
@@ -51,12 +51,12 @@ class Model:
 
         return base_network
 
-    def build_mobilenet_v2_base_network(self):
+    def build_mobilenet_v2_base_network(self, regularizer_coeff=1e-4):
         mobilenet_v2 = tf.keras.applications.MobileNetV2(input_shape=self.input_shape, include_top=False, weights="imagenet")
         
         base_network = tf.keras.Sequential([l for l in mobilenet_v2.layers[:58]])
 
-    def build_vgg16_base_network(self):
+    def build_vgg16_base_network(self, regularizer_coeff=1e-4):
         vgg16 = tf.keras.applications.VGG16(input_shape=self.input_shape, include_top=False, weights="imagenet")
 
         # 37x37x512
@@ -67,8 +67,34 @@ class Model:
             base_network.layers[i].trainable = False
         
         return base_network
+    
+    def build_vgg16_base_network_2(self, regularizer_coeff=1e-4):
+        vgg16 = tf.keras.applications.VGG16(input_shape=self.input_shape, include_top=False, weights="imagenet")
 
-    def build_network(self, l=1e-4):
+        vgg16.trainable = True
+
+        layers = []
+        for i in range(14):
+            layer = vgg16.layers[i]
+
+            if i < 10:
+                layer.trainable = False
+            else: 
+                layer.use_bias = False
+                layer.activation = None
+                layer.bias = None
+
+            layers.append(layer)
+
+            if i > 10:
+                layers.append(tf.keras.layers.BatchNormalization(scale=False))
+                layers.append(tf.keras.layers.ReLU())
+
+        base_network = tf.keras.Sequential(layers)
+
+        return base_network
+
+    def build_network(self, regularizer_coeff=1e-4):
         feature_maps = []
 
         # 37x37x512
@@ -123,22 +149,22 @@ class Model:
 
         self.model = tf.keras.Model(base_network.input, self.outputs)
 
-    def build_network_with_batch_normalization(self, l=1e-4):
+    def build_network_with_batch_normalization(self, regularizer_coeff=1e-4):
         feature_maps = []
 
         # 37x37x512
-        #base_network = self.build_vgg16_base_network(l)
-        base_network = self.build_mobilenet_v1_base_network_2(l)
+        base_network = self.build_vgg16_base_network_2(regularizer_coeff)
+        #base_network = self.build_mobilenet_v1_base_network_2(l)
         y = base_network(base_network.input)
         #feature_maps.append(y)
 
         # 19x19x1024
         y = tf.keras.Sequential([
             tf.keras.layers.MaxPool2D(padding="same"),
-            tf.keras.layers.Conv2D(1024, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(1024, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU(),
-            tf.keras.layers.Conv2D(1024, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(1024, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU()
         ], name = "output_19")(y)
@@ -147,10 +173,10 @@ class Model:
         # 10x10x512
         y = tf.keras.Sequential([
             tf.keras.layers.MaxPool2D(padding="same"),
-            tf.keras.layers.Conv2D(256, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(256, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU(),
-            tf.keras.layers.Conv2D(512, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(512, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU()
         ], name = "output_10")(y)
@@ -159,10 +185,10 @@ class Model:
         # 5x5x256
         y = tf.keras.Sequential([
             tf.keras.layers.MaxPool2D(padding="same"),
-            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU(),
-            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU()
         ], name = "output_5")(y)
@@ -171,10 +197,10 @@ class Model:
         # 3x3x256
         y = tf.keras.Sequential([
             tf.keras.layers.MaxPool2D(padding="same"),
-            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU(),
-            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU()
         ], name = "output_3")(y)
@@ -183,10 +209,10 @@ class Model:
         # 1x1x256
         y = tf.keras.Sequential([
             tf.keras.layers.MaxPool2D(),
-            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU(),
-            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l), use_bias=False),
+            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
             tf.keras.layers.BatchNormalization(scale=False),
             tf.keras.layers.ReLU()
         ], name = "output_1")(y)
@@ -195,7 +221,7 @@ class Model:
         outputs = []
         self.feature_sizes = []
         for i, f in enumerate(feature_maps):
-            output = self.apply_sliding_window(f, self.num_anchors[i], l)
+            output = self.apply_sliding_window(f, self.num_anchors[i], regularizer_coeff)
             outputs.append(output)
             self.feature_sizes.append(output[0].shape[1])
         
@@ -203,12 +229,12 @@ class Model:
         # Model output will list of class and location feature map like 
         # [ [[batch, 37, 37, anchor * class], [batch, 37, 37, anchor * 4]], [[batch, 19, 19, anchor * class], [batch, 19, 19, anchor * 4]], [[], []], ... ]
 
-    def apply_sliding_window(self, x, num_anchor, l=1e-4):
+    def apply_sliding_window(self, x, num_anchor, regularizer_coeff=1e-4):
         #num_output = (self.num_class + 4) * num_anchor
 
-        #y = tf.keras.layers.Conv2D(num_output, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l))(x)
-        c = tf.keras.layers.Conv2D(num_anchor * self.num_class, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l))(x)
-        l = tf.keras.layers.Conv2D(num_anchor * 4, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(l))(x)
+        #y = tf.keras.layers.Conv2D(num_output, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff))(x)
+        c = tf.keras.layers.Conv2D(num_anchor * self.num_class, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff))(x)
+        l = tf.keras.layers.Conv2D(num_anchor * 4, 3, padding="same", kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff))(x)
         
         return c, l
 
