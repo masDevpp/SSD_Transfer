@@ -257,53 +257,51 @@ class Model:
 
     def train(self, images, classes_gt, locations_gt):
         with tf.GradientTape() as tape:
-            outputs = self.model(images, training=True)
-            
-            classes_pred = []
-            locations_pred = []
-
-            #for o in outputs:
-            #    o = tf.reshape(o, [-1, self.num_class + 4])
-            #    classes_pred.append(o[:, :self.num_class])
-            #    locations_pred.append(o[:, self.num_class:])
-
-            for c, l in outputs:
-                c = tf.reshape(c, [-1, self.num_class])
-                l = tf.reshape(l, [-1, 4])
-                classes_pred.append(c)
-                locations_pred.append(l)
-            
-            classes_pred = tf.concat(classes_pred, axis=0)
-            locations_pred = tf.concat(locations_pred, axis=0)
-
+            classes_pred, locations_pred = self.get_flat_logits(images)
             loss = self.calculate_loss(classes_pred, locations_pred, classes_gt, locations_gt)
 
         gradients = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
         return loss
+    
+    @tf.function
+    def calculate_gradients(self, images, classes_gt, locations_gt, negative_ratio=3.0, step=None):
+        with tf.GradientTape() as tape:
+            classes_pred, locations_pred = self.get_flat_logits(images)
+            loss = self.calculate_loss(classes_pred, locations_pred, classes_gt, locations_gt, negative_ratio=negative_ratio, step=step)
+        
+        gradients = tape.gradient(loss, self.model.trainable_variables)
+        return gradients, loss
 
     def get_flat_logits_with_tape(self, images, tape):
         # Expect be used for async execution
         with tape:
-            outputs = self.model(images, training=True)
-            
-            classes_pred = []
-            locations_pred = []
+            classes_pred, locations_pred = self.get_flat_logits(images)
 
-            #for o in outputs:
-            #    o = tf.reshape(o, [-1, self.num_class + 4])
-            #    classes_pred.append(o[:, :self.num_class])
-            #    locations_pred.append(o[:, self.num_class:])
-            
-            for c, l in outputs:
-                c = tf.reshape(c, [-1, self.num_class])
-                l = tf.reshape(l, [-1, 4])
-                classes_pred.append(c)
-                locations_pred.append(l)
-            
-            classes_pred = tf.concat(classes_pred, axis=0)
-            locations_pred = tf.concat(locations_pred, axis=0)
+        return classes_pred, locations_pred
+    
+    @tf.function
+    def get_flat_logits(self, images):
+        # Expect be used for async execution
+        outputs = self.model(images, training=True)
+        
+        classes_pred = []
+        locations_pred = []
+
+        #for o in outputs:
+        #    o = tf.reshape(o, [-1, self.num_class + 4])
+        #    classes_pred.append(o[:, :self.num_class])
+        #    locations_pred.append(o[:, self.num_class:])
+        
+        for c, l in outputs:
+            c = tf.reshape(c, [-1, self.num_class])
+            l = tf.reshape(l, [-1, 4])
+            classes_pred.append(c)
+            locations_pred.append(l)
+        
+        classes_pred = tf.concat(classes_pred, axis=0)
+        locations_pred = tf.concat(locations_pred, axis=0)
 
         return classes_pred, locations_pred
 
@@ -322,29 +320,30 @@ class Model:
         # Expect be used for async execution
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
+    @tf.function
     def calculate_loss(self, class_pred, location_pred, class_gt, location_gt, negative_ratio=3.0, step=None):
         # Generate hard negative mining mask
         class_softmax = tf.keras.layers.Softmax()(class_pred)
-        positive_mask = class_gt != 0
-        negative_mask = class_gt == 0
+        positive_mask = tf.cast(class_gt != 0, tf.float32)
+        negative_mask = tf.cast(class_gt == 0, tf.float32)
 
         negative_softmax = -1.0 * class_softmax[:, 0] * negative_mask + -1.0 * positive_mask
-        num_negative = max(min(sum(positive_mask) * negative_ratio, sum(negative_mask)), 1)
-        values, indices = tf.math.top_k(negative_softmax, k=num_negative)
+        num_negative = tf.math.maximum(tf.math.minimum(tf.reduce_sum(positive_mask) * negative_ratio, tf.reduce_sum(negative_mask)), 1)
+        num_negative = tf.cast(num_negative, tf.int32)
+        values, _ = tf.math.top_k(negative_softmax, k=num_negative)
 
-        negative_mask = np.array(negative_softmax >= values[-1])
-        #negative_mask = np.zeros(class_gt.shape[0]).astype(np.bool)
-        #for i in indices: negative_mask[i] = True
+        #negative_mask = np.array(negative_softmax >= values[-1])
+        negative_mask = tf.cast(negative_softmax >= values[-1], tf.float32)
         mask = positive_mask + negative_mask
 
         # Class loss
         class_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(class_gt, class_pred) * mask
-        class_loss = tf.reduce_sum(class_loss) / sum(mask)
+        class_loss = tf.reduce_sum(class_loss) / tf.reduce_sum(mask)
         
         # Location loss
         delta = location_pred - location_gt
         l1 = smooth_l1(delta)
-        location_loss = tf.reduce_sum(tf.reduce_sum(l1, axis=1) * positive_mask) / sum(positive_mask)
+        location_loss = tf.reduce_sum(tf.reduce_sum(l1, axis=1) * positive_mask) / tf.reduce_sum(positive_mask)
 
         # Regularization loss
         regularization_loss = tf.reduce_sum(self.model.losses)
