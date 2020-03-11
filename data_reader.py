@@ -240,7 +240,7 @@ class DataReader:
                 annotation = self.normalize_annotation(image, annotation)
 
                 # Normalize image
-                image = np.array(image) / 255
+                image = (np.array(image) / 255).astype(np.float32)
 
                 images.append(image)
                 annotations.append(annotation)
