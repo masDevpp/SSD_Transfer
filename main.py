@@ -23,49 +23,6 @@ TEST_BATCH_SIZE = BATCH_SIZE // 2
 ASPECT_RATIOS = [1, 2, 1/2, 3, 1/3]
 regularizer_coeff = 0.0
 
-def draw_bounding_box0(images, classes_pred, locations_pred, default_boxies, softmaxis, max_num_plot):
-    drawn_images = []
-
-    for b in range(min(classes_pred[0].shape[0], max_num_plot)):
-        image = Image.fromarray((images[b] * 255).astype(np.uint8))
-        draw = ImageDraw.Draw(image)
-
-        for f in range(len(classes_pred)):
-            for y in range(classes_pred[f].shape[1]):
-                for x in range(classes_pred[f].shape[2]):
-                    for a in range(classes_pred[f].shape[3]):
-                        if classes_pred[f][b, y, x, a] == 0: continue
-
-                        cx = (locations_pred[f][b, y, x, a, 0] * default_boxies[f][b, y, x, a, 2] + default_boxies[f][b, y, x, a, 0]) * image.size[0]
-                        cy = (locations_pred[f][b, y, x, a, 1] * default_boxies[f][b, y, x, a, 3] + default_boxies[f][b, y, x, a, 1]) * image.size[1]
-                        wid = (np.exp(1) ** locations_pred[f][b, y, x, a, 2]) * default_boxies[f][b, y, x, a, 2] * image.size[0]
-                        hei = (np.exp(1) ** locations_pred[f][b, y, x, a, 3]) * default_boxies[f][b, y, x, a, 3] * image.size[1]
-
-                        xmin = cx - wid / 2
-                        xmax = cx + wid / 2
-                        ymin = cy - hei / 2
-                        ymax = cy + hei / 2
-                        if xmin < 0: xmin = 0
-                        if xmax > image.size[0] - 1: xmax = image.size[0] - 1
-                        if ymin < 0: ymin = 0
-                        if ymax > image.size[1] - 1: ymax = image.size[0] - 1
-                        
-                        c = classes_pred[f][b, y, x, a]
-                        color = f"hsl({(c - 1) / 20 * 360},100%,50%)"
-                        font = ImageFont.truetype("arial.ttf", size=15)
-
-                        if softmaxis is None: softmax = ""
-                        else: softmax = f"{softmaxis[f][b, y, x, a, c]:.2f}"
-                        text = DataReader.class_to_name(None, c) + " " + softmax
-
-                        draw.rectangle([xmin, ymin, xmax, ymax], outline=color)
-
-                        draw.text([xmin + 1, ymin], text, font=font, fill=color)
-
-        drawn_images.append(image)
-
-    return drawn_images
-
 def draw_bounding_box(images, classes_pred, locations_pred, default_boxies, softmaxis, max_num_plot):
     drawn_images = []
     draws = []
