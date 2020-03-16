@@ -60,7 +60,7 @@ class Main():
         print("\nPrepare model")
         regularization_coeff = 1e-8
         #with tf.device("gpu:0"):
-        self.model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, l=regularization_coeff)
+        self.model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, regularizer_coeff=regularization_coeff)
         if self.model.feature_sizes != FEATURE_SIZES: raise ValueError
 
         print("\nLoad checkpoint")
@@ -125,7 +125,7 @@ class Main():
         self.num_worker = 6#3
         self.worker_contexts = []
         for i in range(self.num_worker):
-            model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, l=regularization_coeff)
+            model = Model(IMAGE_SIZE + [3], self.train_reader.num_class, NUM_ANCHORS, regularizer_coeff=regularization_coeff)
             self.worker_contexts.append(WorkerContext(model, str(i)))
             self.worker_contexts[-1].reset(self.model.model.trainable_variables)
 
