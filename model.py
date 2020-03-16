@@ -24,7 +24,6 @@ class Model:
         self.num_anchors = num_anchors
         self.learning_rate = lr
 
-        #self.build_network(regularizer_coeff)
         self.build_network_with_batch_normalization(regularizer_coeff)
 
         self.optimizer = tf.optimizers.Adam(self.learning_rate)
@@ -51,6 +50,14 @@ class Model:
 
         return base_network
 
+    def build_mobilenet_v1_base_network_output18(self, regularizer_coeff=1e-4):
+        mobilenet_v1 = tf.keras.applications.MobileNet(input_shape=self.input_shape, include_top=False, weights="imagenet")
+
+        base_network = tf.keras.Sequential([l for l in mobilenet_v1.layers[:74]])
+        base_network.trainable = True
+
+        return base_network
+
     def build_mobilenet_v2_base_network(self, regularizer_coeff=1e-4):
         mobilenet_v2 = tf.keras.applications.MobileNetV2(input_shape=self.input_shape, include_top=False, weights="imagenet")
         
@@ -61,10 +68,7 @@ class Model:
 
         # 37x37x512
         base_network = tf.keras.Sequential([l for l in vgg16.layers[:14]])
-        #self.base_network.trainable = False
-        base_network.trainable = True
-        for i in range(len(base_network.layers) - 1):
-            base_network.layers[i].trainable = False
+        base_network.trainable = False
         
         return base_network
     
@@ -93,6 +97,40 @@ class Model:
         base_network = tf.keras.Sequential(layers)
 
         return base_network
+
+    def build_vgg16_base_network_output18(self, regularizer_coeff=1e-4):
+        vgg16 = tf.keras.applications.VGG16(input_shape=self.input_shape, include_top=False, weights="imagenet")
+
+        # 37x37x512
+        base_network = tf.keras.Sequential([l for l in vgg16.layers[:18]])
+        #self.base_network.trainable = False
+        base_network.trainable = True
+        for i in range(len(base_network.layers) - 3):
+            base_network.layers[i].trainable = False
+        
+        return base_network
+
+    def build_vgg16_base_network_output19(self, regularizer_coeff=1e-4):
+        use_bias = False
+        scale = False
+
+        input_layer = tf.keras.layers.InputLayer(self.input_shape)
+
+        # Input 300x300
+        net = self.build_single_conv_layer_with_batch_norm(input_layer.output, 64, 3, use_bias=use_bias, scale=scale, regularizer_coeff=regularizer_coeff)
+        net = self.build_single_conv_layer_with_batch_norm(net, 64, 3, use_bias=use_bias, scale=scale, regularizer_coeff=regularizer_coeff)
+        net = tf.keras.layers.MaxPool2D(2)(net)
+
+        # Input 150x150
+    
+    def build_single_conv_layer_with_batch_norm(self, input, num_filter, kernel_size, padding="same", use_bias=False, scale=False, regularizer_coeff=1e-8):
+        output = tf.keras.Sequential([
+            tf.keras.layers.Conv2D(num_filter, kernel_size, padding=padding, use_bias=use_bias, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff)),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            tf.keras.layers.ReLU()
+        ])(input)
+
+        return output
 
     def build_network(self, regularizer_coeff=1e-4):
         feature_maps = []
@@ -153,8 +191,7 @@ class Model:
         feature_maps = []
 
         # 37x37x512
-        base_network = self.build_vgg16_base_network_2(regularizer_coeff)
-        #base_network = self.build_mobilenet_v1_base_network_2(l)
+        base_network = self.build_vgg16_base_network(regularizer_coeff)
         y = base_network(base_network.input)
         #feature_maps.append(y)
 
@@ -229,6 +266,78 @@ class Model:
         # Model output will list of class and location feature map like 
         # [ [[batch, 37, 37, anchor * class], [batch, 37, 37, anchor * 4]], [[batch, 19, 19, anchor * class], [batch, 19, 19, anchor * 4]], [[], []], ... ]
 
+    def build_network_with_batch_normalization_2(self, regularizer_coeff=1e-4):
+        feature_maps = []
+
+        # 18x18x512
+        base_network = self.build_mobilenet_v1_base_network_output18(regularizer_coeff)
+        y = base_network(base_network.input)
+        feature_maps.append(y)
+
+        initializer = "glorot_normal"
+        scale = False
+        activation = tf.keras.layers.ReLU
+
+        # 9x9x1024
+        y = tf.keras.Sequential([
+            tf.keras.layers.MaxPool2D(),
+            tf.keras.layers.Conv2D(1024, 3, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation(),
+            tf.keras.layers.Conv2D(1024, 1, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation()
+        ], name = "output_9")(y)
+        feature_maps.append(y)
+
+        # 4x4x512
+        y = tf.keras.Sequential([
+            tf.keras.layers.MaxPool2D(),
+            tf.keras.layers.Conv2D(256, 1, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation(),
+            tf.keras.layers.Conv2D(512, 3, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation()
+        ], name = "output_4")(y)
+        feature_maps.append(y)
+
+        # 2x2x256
+        y = tf.keras.Sequential([
+            tf.keras.layers.MaxPool2D(),
+            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation(),
+            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation()
+        ], name = "output_2")(y)
+        feature_maps.append(y)
+
+        # 1x1x256
+        y = tf.keras.Sequential([
+            tf.keras.layers.MaxPool2D(),
+            tf.keras.layers.Conv2D(128, 1, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation(),
+            tf.keras.layers.Conv2D(256, 3, padding="same", kernel_initializer=initializer, kernel_regularizer=tf.keras.regularizers.l2(regularizer_coeff), use_bias=False),
+            tf.keras.layers.BatchNormalization(scale=scale),
+            activation()
+        ], name = "output_1")(y)
+        feature_maps.append(y)
+
+        outputs = []
+        self.feature_sizes = []
+        for i, f in enumerate(feature_maps):
+            output = self.apply_sliding_window(f, self.num_anchors[i], regularizer_coeff)
+            outputs.append(output)
+            self.feature_sizes.append(output[0].shape[1])
+        
+        self.model = tf.keras.Model(base_network.input, outputs)
+        # Model output will list of class and location feature map like 
+        # [ [[batch, 37, 37, anchor * class], [batch, 37, 37, anchor * 4]], [[batch, 19, 19, anchor * class], [batch, 19, 19, anchor * 4]], [[], []], ... ]
+
+    
     def apply_sliding_window(self, x, num_anchor, regularizer_coeff=1e-4):
         #num_output = (self.num_class + 4) * num_anchor
 
@@ -238,22 +347,27 @@ class Model:
         
         return c, l
 
-    def predict(self, x, training=False):
+    def predict(self, x, training=True):
         classes = []
         locations = []
+        softmaxis = []
 
         predictions = self.model(x, training=training)
 
         for i, o in enumerate(predictions):
             c = o[0]
             l = o[1]
-            c = tf.argmax(tf.reshape(c, c.shape[:-1] + (self.num_anchors[i], self.num_class)), axis=-1)
+
+            c = tf.reshape(c, c.shape[:-1] + (self.num_anchors[i], self.num_class))
+            softmax = tf.nn.softmax(c)
+            c = tf.argmax(c, axis=-1)
             l = tf.reshape(l, l.shape[:-1] + (self.num_anchors[i], 4))
 
             classes.append(c)
             locations.append(l)
+            softmaxis.append(softmax)
             
-        return classes, locations
+        return classes, locations, softmaxis
 
     def train(self, images, classes_gt, locations_gt):
         with tf.GradientTape() as tape:
@@ -343,7 +457,7 @@ class Model:
         # Location loss
         delta = location_pred - location_gt
         l1 = smooth_l1(delta)
-        location_loss = tf.reduce_sum(tf.reduce_sum(l1, axis=1) * positive_mask) / tf.reduce_sum(positive_mask)
+        location_loss = tf.reduce_sum(tf.reduce_mean(l1, axis=1) * positive_mask) / tf.reduce_sum(positive_mask)
 
         # Regularization loss
         regularization_loss = tf.reduce_sum(self.model.losses)
