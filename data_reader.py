@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from PIL import Image, ImageEnhance, ImageDraw
+from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 import glob
 import xml.etree.ElementTree as et
 from collections import deque
@@ -8,7 +8,7 @@ import threading
 import time
 
 class DataReader:
-    def __init__(self, base_dir, image_size, batch_size, feature_sizes, aspect_ratios, num_anchors, batch_first=False, flatten=True, distort_prob=0.5, num_thread=2, queue_size=4):
+    def __init__(self, base_dir, image_size, batch_size, feature_sizes, aspect_ratios, num_anchors, batch_first=False, flatten=True, distort_prob=0.5, num_thread=1, queue_size=2):
         self.debug_output = False
         self.num_class = 21
         
@@ -43,7 +43,7 @@ class DataReader:
         self.event.set()
     
     def read_batch(self):
-        if self.debug_output and len(self.batch_queue) == 0: print("queue empty!")
+        if len(self.batch_queue) == 0: print("queue empty!")
         while len(self.batch_queue) == 0: continue
 
         if self.debug_output: print("dequeue")
@@ -53,6 +53,27 @@ class DataReader:
             self.event.set()
 
         return batch
+
+    def do_flatten(self, classes, locations, default_boxies):
+        if self.batch_first: raise NotImplementedError
+
+        # Reshape from [feature, batch, height, width, anchor, class or location]
+        # to [feature * batch * height * anchor, class or location]
+
+        classes_flat = []
+        locations_flat = []
+        default_boxies_flat = []
+        
+        for c, l, d in zip(classes, locations, default_boxies):
+            classes_flat.append(c.reshape([-1]))
+            locations_flat.append(l.reshape([-1, l.shape[-1]]))
+            default_boxies_flat.append(d.reshape([-1, d.shape[-1]]))
+        
+        classes_flat = np.concatenate(classes_flat, axis=0)
+        locations_flat = np.concatenate(locations_flat, axis=0)
+        default_boxies_flat = np.concatenate(default_boxies_flat, axis=0)
+
+        return classes_flat, locations_flat, default_boxies_flat
         
     def read_data(self):
         index = np.random.randint(len(self.file_names))
@@ -274,10 +295,10 @@ class DataReader:
                     l = np.array(l)
                     d = np.array(d)
 
-                    if self.flatten:
-                        c = c.reshape([-1])
-                        l = l.reshape([-1, l.shape[-1]])
-                        d = d.reshape([-1, d.shape[-1]])
+                    #if self.flatten:
+                    #    c = c.reshape([-1])
+                    #    l = l.reshape([-1, l.shape[-1]])
+                    #    d = d.reshape([-1, d.shape[-1]])
 
                     cl.append(np.array(c))
                     loc.append(np.array(l))
@@ -286,11 +307,14 @@ class DataReader:
                 locations_gt = loc
                 default_boxies = db
 
+                #if self.flatten:
+                #    # Reshape to [feature * batch * height * width * anchor, class or location]
+                #    classes_gt = np.concatenate(classes_gt, axis=0)
+                #    locations_gt = np.concatenate(locations_gt, axis=0)
+                #    default_boxies = np.concatenate(default_boxies, axis=0)
+
                 if self.flatten:
-                    # Reshape to [feature * batch * height * width * anchor, class or location]
-                    classes_gt = np.concatenate(classes_gt, axis=0)
-                    locations_gt = np.concatenate(locations_gt, axis=0)
-                    default_boxies = np.concatenate(default_boxies, axis=0)
+                    classes_gt, locations_gt, default_boxies = self.do_flatten(classes_gt, locations_gt, default_boxies)
 
             batch = [np.array(images), annotations, classes_gt, locations_gt, default_boxies]
 
