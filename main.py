@@ -84,14 +84,6 @@ class Main:
         train_reader_unflat = DataReader(DATA_DIR, IMAGE_SIZE, BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=False)
         test_reader_unflat = DataReader(TEST_DATA_DIR, IMAGE_SIZE, TEST_BATCH_SIZE, FEATURE_SIZES, ASPECT_RATIOS, NUM_ANCHORS, batch_first=False, flatten=False, distort_prob=0.2)
 
-        images, annotations, classes_gt, locations_gt, default_boxies = test_reader_unflat.read_batch()
-        stt = time.time()
-        drawn_images1 = draw_bounding_box(images, classes_gt, locations_gt, default_boxies, None, 100)
-        print(f"1 {time.time() - stt:.3f}")
-        stt = time.time()
-        drawn_images2 = draw_bounding_box2(images, classes_gt, locations_gt, default_boxies, None, 100)
-        print(f"2 {time.time() - stt:.3f}")
-        
         print("\nPrepare model")
         learnining_rate = tf.optimizers.schedules.ExponentialDecay(0.01, train_reader.num_data / BATCH_SIZE, 0.95, staircase=False)
         model = Model(IMAGE_SIZE + [3], train_reader.num_class, NUM_ANCHORS, regularizer_coeff=regularizer_coeff, lr=learnining_rate)
